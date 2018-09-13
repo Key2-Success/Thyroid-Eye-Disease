@@ -1,0 +1,517 @@
+---
+title: "Stats 141SL Thyroid Eye Disease Volume - Final"
+author: Yi Ai Chen, Niamh Evenhouse, Mrinalini Garg, Kitu Komya, Caitlin Shener, Mohini
+  Vembusubramanian
+date: "3/23/2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Cleaning up the data (Yi Ai)
+```{r cleaning data}
+library(dplyr)
+
+# read data, deleted hidden cols via excel - yiai
+#setwd("~/Desktop/School/STATS 141SL/Final Project")
+#TEDV_visible_cols <- read.csv("TEDV.csv")
+
+# read data, deleted hidden cols via excel
+TEDV_visible_cols <- read.csv(file = "TEDV.csv")
+
+# new `control` patient variable
+control <- c(rep(0, 24), rep(1, 21)) # 24 patients, 21 control obs
+TEDV_visible_cols <- cbind(TEDV_visible_cols, control)
+
+# replicate observations that are non-control
+TEDV_replicated <- rbind(TEDV_visible_cols, TEDV_visible_cols[1:24,])
+
+# rows 1:24 will be OD, rows 25:69 will be OS. label OD = 0, OS = 1 (use OS for control obs)
+OD_or_OS <- c(rep(0, 24), rep(1, 45))
+
+# make a new variable optic_neuropathy (present if 12th var is 0, 1 or 2)
+optic_neuropathy <- rep(NA, 69)
+
+for(i in 1:24) {
+  if(is.na(TEDV_replicated[i, 12])){
+    optic_neuropathy[i] <- 0
+  } 
+  else if(TEDV_replicated[i,12] == 0) {
+    optic_neuropathy[i] <- 1
+  }
+  else if(TEDV_replicated[i,12] == 2) {
+    optic_neuropathy[i] <- 1
+  }
+  else {
+    optic_neuropathy[i] <- 0
+  }
+}
+
+for(i in 25:69) {
+  if(is.na(TEDV_replicated[i, 12])){
+    optic_neuropathy[i] <- 0
+  } 
+  else if(TEDV_replicated[i,12] == 1) {
+    optic_neuropathy[i] <- 1
+  }
+  else if(TEDV_replicated[i,12] == 2) {
+    optic_neuropathy[i] <- 1
+  }
+  else {
+    optic_neuropathy[i] <- 0
+  }
+}
+
+sum(optic_neuropathy) # should be 9
+
+# combine cols
+TEDV_replicated <- cbind(TEDV_replicated, OD_or_OS, optic_neuropathy)
+
+# make new cols!
+lagophthalmos <- c(TEDV_replicated[1:24, 4], TEDV_replicated[25:69, 5])
+hertel <- c(TEDV_replicated[1:24, 6], TEDV_replicated[25:69, 7])
+# strabismus # don't need to fix, applies to both eyes
+medial_bow <- c(TEDV_replicated[1:24, 14], TEDV_replicated[25:69, 15])
+decompression <- c(TEDV_replicated[1:24, 16], TEDV_replicated[25:69, 17])
+fat_volume <- c(TEDV_replicated[1:24, 18], TEDV_replicated[25:69, 19])
+muscle_volume <- c(TEDV_replicated[1:24, 20], TEDV_replicated[25:69, 21])
+orbit_volume <- c(TEDV_replicated[1:24, 22], TEDV_replicated[25:69, 23])
+FV.OV <- c(TEDV_replicated[1:24, 24], TEDV_replicated[25:69, 25])
+MV.OV <- c(TEDV_replicated[1:24, 26], TEDV_replicated[25:69, 27])
+medial_rectus_muscle_vol <- c(TEDV_replicated[1:24, 28], TEDV_replicated[25:69, 29])
+
+TEDV <- cbind(TEDV_replicated[,c(1,2,3,8,9,10,13,30,31,32)],lagophthalmos,  hertel,medial_bow,decompression,fat_volume,muscle_volume,orbit_volume,FV.OV,MV.OV,medial_rectus_muscle_vol)
+
+# make new var: fat volume / muscle volume
+fat_muscle_ratio <- TEDV$fat_volume/TEDV$muscle_volume
+
+TEDV <- cbind(TEDV, fat_muscle_ratio)
+
+TEDV %>% group_by(control) %>% summarise(avg_fat_volume = mean(fat_volume, na.rm = TRUE))
+TEDV %>% group_by(control) %>% summarise(avg_muscle_volume = mean(muscle_volume, na.rm = TRUE))
+TEDV %>% group_by(control) %>% summarise(avg_orbit_volume = mean(orbit_volume, na.rm = TRUE))
+TEDV %>% group_by(control) %>% summarise(avg_medial_rectus_volume = mean(medial_rectus_muscle_vol, na.rm = TRUE))
+```
+
+# Exploration of data (Yi Ai)
+```{r exploration}
+# histograms of numerical values
+hist(TEDV$Age)
+hist(TEDV$CAS.score)
+hist(TEDV$OSDI.score)
+hist(TEDV$hertel)
+hist(TEDV$fat_volume)
+hist(TEDV$muscle_volume)
+hist(TEDV$orbit_volume)
+hist(TEDV$FV.OV)
+hist(TEDV$MV.OV)
+hist(TEDV$medial_rectus_muscle_vol)
+hist(TEDV$fat_muscle_ratio)
+
+# contingency table between optic neuropathy (ON) and logistic/categorical predictors
+ON <- factor(TEDV$optic_neuropathy)
+strabismus <- factor(TEDV$Strabismus.0.No.1.yes)
+table(ON, strabismus)
+
+lagophthalmos <- factor(TEDV$lagophthalmos)
+table(ON, lagophthalmos)
+
+medial_bow <- factor(TEDV$medial_bow)
+table(ON, medial_bow)
+
+decompression <- factor(TEDV$decompression)
+table(ON, decompression)
+```
+
+# Using Fisher's Exact Test for testing the null independence of rows and columns in contingency tables for categorical variables (Yi Ai)
+```{r}
+mat_ON_strab <- as.matrix(table(ON, strabismus))
+fisher.test(mat_ON_strab)
+
+mat_ON_lago <- as.matrix(table(ON, lagophthalmos)) ## too few elements in the matrix, many have 0
+fisher.test(mat_ON_lago)
+
+mat_ON_med <- as.matrix(table(ON, medial_bow))
+fisher.test(mat_ON_med)
+
+mat_ON_decomp <- table(ON, decompression) ## advised that decompression is not a good predictor of ON, many personal choices (non-medical reasons) involved in decision to undergo decompression
+fisher.test(mat_ON_decomp)
+```
+
+Results: all p-values not significant, 95% confidence intervals all contain 1. This tells us that we cannot reject the null hypothesis of independence between ON and strabismus, ON and medial bowing, and ON and decompression. 
+
+# Left versus Right Eye (Mrinalini)
+
+```{r}
+library(ggplot2)
+
+#Separate table for experimental data:
+TEDV %>% filter( control== 0) -> tedv_exp
+tedv_exp$OD_or_OS<- as.factor(tedv_exp$OD_or_OS)
+
+# Getting some summary stats for left versus right
+
+# In experiment group 
+TEDV %>% filter( control== 0, OD_or_OS==1) %>% summarise(count=n(), CAS= mean(CAS.score,na.rm= T), OSDI= mean(OSDI.score, na.rm= T), Strabismus_prop= mean(Strabismus.0.No.1.yes,na.rm= T),  ON_prop= mean(optic_neuropathy, na.rm= T), lagophthalmos= mean(lagophthalmos, na.rm= T), hertel= mean(hertel, na.rm= T), medial_bow_prop= mean(medial_bow, na.rm= T) , decompression= mean(decompression, na.rm= T), fat_volume= mean( fat_volume, na.rm= T), muscle_volume= mean(muscle_volume, na.rm= T), orbit_volume= mean(orbit_volume, na.rm= T), FV.OV= mean(FV.OV, na.rm= T), MV.OV= mean(MV.OV, na.rm= T), Medial_vol= mean(medial_rectus_muscle_vol, na.rm= T )) %>% round(4)
+
+TEDV %>% filter( control== 0, OD_or_OS==0) %>% summarise( count=n(), CAS= mean(CAS.score,na.rm= T), OSDI= mean(OSDI.score, na.rm= T), Strabismus_prop= mean(Strabismus.0.No.1.yes,na.rm= T),  ON_prop= mean(optic_neuropathy, na.rm= T), lagophthalmos= mean(lagophthalmos, na.rm= T), hertel= mean(hertel, na.rm= T), medial_bow_prop= mean(medial_bow, na.rm= T) , decompression= mean(decompression, na.rm= T), fat_volume= mean( fat_volume, na.rm= T), muscle_volume= mean(muscle_volume, na.rm= T), orbit_volume= mean(orbit_volume, na.rm= T), FV.OV= mean(FV.OV, na.rm= T), MV.OV= mean(MV.OV, na.rm= T), Medial_vol= mean(medial_rectus_muscle_vol, na.rm= T )) %>% round(4)
+
+
+# Visualising and testing for significance in numerical variables:
+#QUESTIONS: Is decompression carried out for both eyes?
+
+#CAS_score, OSDI, strabismus, decompression-- Same for both eyes 
+
+# Lagopthalmos
+ggplot(tedv_exp, aes(x=lagophthalmos, colour= OD_or_OS)) + geom_density(alpha= 0.1)
+
+# fat volume
+ggplot(tedv_exp, aes(x=fat_volume, colour= OD_or_OS)) + geom_density(alpha= 0.1)
+
+#Muscle volume:
+ggplot(tedv_exp, aes(x=muscle_volume, colour= OD_or_OS)) + geom_density(alpha= 0.1)
+ 
+#Hertel
+ggplot(tedv_exp, aes(x=hertel, colour= OD_or_OS)) + geom_density(alpha= 0.2)
+
+#Orbit volume:
+ggplot(tedv_exp, aes(x=orbit_volume, colour= OD_or_OS)) + geom_density(alpha= 0.2)
+
+#Medial Rectus Volume: too few obsevations
+ggplot(tedv_exp, aes(x=medial_rectus_muscle_vol, colour= OD_or_OS)) + geom_density(alpha= 0.2)
+
+
+# Checking correlations between left and right eye: 
+# Using pearson coefficients for numerical and chiquared for categorical 
+
+#Lagopthalmos- seems to be independent for two eyes in experiment
+cor.test(subset(tedv_exp$lagophthalmos, tedv_exp$OD_or_OS ==1), subset(tedv_exp$lagophthalmos, tedv_exp$OD_or_OS==0), method = "pearson" )
+
+#Hertel- seems to be independent for two eyes in experiment
+cor.test(subset(tedv_exp$hertel, tedv_exp$OD_or_OS ==1), subset(tedv_exp$hertel, tedv_exp$OD_or_OS==0), method = "pearson" )
+
+# Fat volume:
+cor.test(subset(tedv_exp$fat_volume, tedv_exp$OD_or_OS ==1), subset(tedv_exp$fat_volume, tedv_exp$OD_or_OS==0), method = "pearson" )
+
+#Muscle volume- seems to be independent for two eyes in experiment
+cor.test(subset(tedv_exp$muscle_volume, tedv_exp$OD_or_OS ==1), subset(tedv_exp$muscle_volume, tedv_exp$OD_or_OS==0), method = "pearson" )
+
+#Orbital: seems to be independent for two eyes in experiment
+cor.test(subset(tedv_exp$orbit_volume, tedv_exp$OD_or_OS ==1), subset(tedv_exp$orbit_volume, tedv_exp$OD_or_OS==0), method = "pearson" )
+
+# Medial Rectus: Too few observations: But seems significant at 90%
+cor.test(subset(tedv_exp$medial_rectus_muscle_vol, tedv_exp$OD_or_OS ==1), subset(tedv_exp$medial_rectus_muscle_vol, tedv_exp$OD_or_OS==0), method = "pearson" )
+
+# Next step would be to fit models separately for both left and right and see how they compare. ( To do after main model fit)
+
+```
+
+Conclusions: Seem indepedent as per pearson's coefficient, but look related in the plots (ask prof)
+
+# Control vs Experimental (Kitu)
+```{r}
+# split dataset into control and experimental
+TEDV_control <- TEDV[control == 1, ]
+TEDV_experimental <- TEDV[control == 0, ]
+
+# summary stats
+summary(TEDV_control)
+summary(TEDV_experimental)
+
+# histograms of controls
+hist(TEDV_control$Age, col = "steelblue")
+hist(TEDV_control$fat_volume, col = "steelblue")
+hist(TEDV_control$muscle_volume, col = "steelblue")
+hist(TEDV_control$orbit_volume, col = "steelblue")
+hist(TEDV_control$FV.OV, col = "steelblue")
+hist(TEDV_control$MV.OV, col = "steelblue")
+hist(TEDV_control$medial_rectus_muscle_vol, col = "steelblue")
+
+# histograms of experimentals
+hist(TEDV_experimental$Age, col = "steelblue")
+hist(TEDV_experimental$fat_volume, col = "steelblue")
+hist(TEDV_experimental$muscle_volume, col = "steelblue")
+hist(TEDV_experimental$orbit_volume, col = "steelblue")
+hist(TEDV_experimental$FV.OV, col = "steelblue")
+hist(TEDV_experimental$MV.OV, col = "steelblue")
+hist(TEDV_experimental$medial_rectus_muscle_vol, col = "steelblue")
+
+# t-tests on all vars
+t.test(TEDV_control$Age, TEDV_experimental$Age) # not significant: 0.1111
+t.test(TEDV_control$fat_volume, TEDV_experimental$fat_volume) # signifcant: 0.01603
+t.test(TEDV_control$muscle_volume, TEDV_experimental$muscle_volume) # significant: 1.894*10^-8
+t.test(TEDV_control$orbit_volume, TEDV_experimental$orbit_volume) # significant: 0.00222
+t.test(TEDV_control$FV.OV, TEDV_experimental$FV.OV) # not significant: 0.29
+t.test(TEDV_control$MV.OV, TEDV_experimental$MV.OV) # significant: 3.939*10^-6
+t.test(TEDV_control$medial_rectus_muscle_vol, TEDV_experimental$medial_rectus_muscle_vol) # significant: 0.0007083
+
+# plots comparing control with experimental
+library(ggplot2)
+TEDV$control <- as.factor(TEDV$control)
+ggplot(TEDV, aes(x = Age, color = control, fill = control)) + geom_density(alpha = 0.4)
+  #geom_histogram(data = subset(TEDV, control == 1), fill = "red", alpha = 0.2) +
+  #geom_histogram(data = subset(TEDV, control == 0), fill = "blue", alpha = 0.2) 
+ggplot(TEDV, aes(x = Age, color = control, fill = control)) + geom_density(alpha = 0.4)
+ggplot(TEDV, aes(x = fat_volume, color = control, fill = control)) + geom_density(alpha = 0.4)
+ggplot(TEDV, aes(x = muscle_volume, color = control, fill = control)) + geom_density(alpha = 0.4)
+ggplot(TEDV, aes(x = orbit_volume, color = control, fill = control)) + geom_density(alpha = 0.4)
+ggplot(TEDV, aes(x = FV.OV, color = control, fill = control)) + geom_density(alpha = 0.4)
+ggplot(TEDV, aes(x = MV.OV, color = control, fill = control)) + geom_density(alpha = 0.4)
+ggplot(TEDV, aes(x = medial_rectus_muscle_vol, color = control, fill = control)) + geom_density(alpha = 0.4)
+```
+
+
+# Correlation Coefficient (Kitu)
+```{r}
+# new variable
+TEDV$fat_over_muscle <- TEDV$fat_volume/TEDV$muscle_volume
+
+# new dataframes
+TEDV_exp_ON <- TEDV[TEDV$control == 0 & TEDV$optic_neuropathy == 1, ]
+TEDV_exp_no_ON <- TEDV[TEDV$control == 0 & TEDV$optic_neuropathy == 0, ]
+
+# correlation tests: do this manually for all variables
+cor.test(TEDV_exp_ON$hertel, TEDV_exp_ON$muscle_volume, use = "complete.obs")
+cor.test(TEDV_exp_no_ON$hertel, TEDV_exp_no_ON$muscle_volume, use = "complete.obs")
+
+# make dataframe when significant
+dat <- data.frame( 
+    x = c(1, 1, 1, 2, 2, 2 ), 
+    y = c(0.3, 0.6, 0.9, 0.1, 0.4, 0.7)
+)
+
+# rename variable
+dat$x <- ifelse(dat$x == 1, "Experimental with ON", "Experimental without ON")
+
+# plot boxplots for each time correlation coefficient is significant
+ggplot(dat, aes(x = factor(x), y = y)) + geom_boxplot(aes(fill = factor(x))) + guides(fill = F) + ylab("Correlation  Coefficient") + xlab("") + ggtitle("Hertel vs Muscle Volume")
+
+```
+
+
+# Modeling (Caitlin)
+
+```{r}
+#this is how many non blind eyes vs how many blind eyes 
+table( TEDV$optic_neuropathy)
+model_ON <-glm(optic_neuropathy~ CAS.score +  OSDI.score + lagophthalmos+  Strabismus.0.No.1.yes  +  hertel  +  FV.OV  +   MV.OV + medial_bow +  decompression +   medial_rectus_muscle_vol , family=binomial, data =  TEDV[TEDV$control == 0, ]) 
+summary(model_ON )
+
+model_ON_2 <- glm(optic_neuropathy ~ fat_muscle_ratio, family=binomial, data =  TEDV[TEDV$control == 0, ]) 
+summary(model_ON_2)
+
+model_ON_3 <- glm(optic_neuropathy ~ FV.OV, family=binomial, data =  TEDV[TEDV$control == 0, ]) 
+summary(model_ON_3)
+
+model_ON_4 <- glm(optic_neuropathy ~ MV.OV, family=binomial, data =  TEDV[TEDV$control == 0, ]) 
+summary(model_ON_4)
+
+model_ON_5 <- glm(optic_neuropathy ~ lagophthalmos, family=binomial, data =  TEDV[TEDV$control == 0, ]) 
+summary(model_ON_5)
+
+model_ON_6 <- glm(optic_neuropathy ~ hertel, family=binomial, data =  TEDV[TEDV$control == 0, ])
+summary(model_ON_6)
+```
+
+Table of Means to explain why nothing is important. 
+```{r}
+TEDV %>% group_by(optic_neuropathy) %>% summarize(mean(CAS.score, na.rm = TRUE), mean(Strabismus.0.No.1.yes,  na.rm = TRUE), mean(orbit_volume,  na.rm = TRUE), mean(muscle_volume,  na.rm = TRUE), mean(fat_volume,  na.rm = TRUE), mean(medial_rectus_muscle_vol, na.rm = TRUE))
+```
+
+
+```{r}
+model_decompression <-glm(decompression~ CAS.score +  OSDI.score + lagophthalmos+  Strabismus.0.No.1.yes   +  hertel  +  FV.OV  +   MV.OV + medial_bow +  medial_rectus_muscle_vol ,  data =  TEDV[TEDV$control == 0, ]) 
+summary(model_decompression)
+```
+
+
+```{r}
+model_Strabismus<- glm(Strabismus.0.No.1.yes~ CAS.score+ Lagophthalmos.OD + Lagophthalmos.OS + Hertel.OD+ Hertel.OS + OSDI.score +  OPTIC.NEUROPATHY..0.1. + OPTIC.NEUROPATHY.EYE..OD.0..OS.1..OU.2. + MEDIAL.BOW.OD..0.1..0..No..1..Yes + MEDIAL.BOW.OS..0.1..0..No..1..Yes + DECOMPRESSION.OD..1..0. + DECOMPRESSION.OS..1..0. + FV.OV.OD + FV.OV.OS + MV.OV.OD + MV.OV.OS+ FV.OV.OS + R.Medial.Rectus.Muscle.Volume + Left.Medial.Rectus.Muscle.Volume, data= TEDV_visible_cols[TEDV_visible_cols$control == 0,] , family = binomial) 
+summary(model_Strabismus)
+```
+
+```{r}
+library(logistf)
+decompression_log <- logistf(decompression~ CAS.score +  OSDI.score + lagophthalmos+  Strabismus.0.No.1.yes   +  hertel  +  FV.OV  +   MV.OV + medial_bow +  medial_rectus_muscle_vol ,  data =  TEDV[TEDV$control == 0, ]) 
+summary(decompression_log)
+
+```
+
+```{r}
+model_ON_logistf <- logistf(optic_neuropathy~ CAS.score +  OSDI.score + lagophthalmos+  Strabismus.0.No.1.yes  +  hertel  +  FV.OV  +   MV.OV + medial_bow +  decompression +   medial_rectus_muscle_vol , family=binomial, data =  TEDV[TEDV$control == 0, ]) 
+summary(model_ON_logistf)
+```
+
+####out of these there are too many predictors we need to decide which ones to use 
+```{r,, eval=FALSE}
+model_Strabismus_logistf<- logistf(Strabismus.0.No.1.yes~ CAS.score+ Lagophthalmos.OD + Lagophthalmos.OS + Hertel.OD+ Hertel.OS + OSDI.score +  OPTIC.NEUROPATHY..0.1. + OPTIC.NEUROPATHY.EYE..OD.0..OS.1..OU.2. + MEDIAL.BOW.OD..0.1..0..No..1..Yes + MEDIAL.BOW.OS..0.1..0..No..1..Yes + DECOMPRESSION.OD..1..0. + DECOMPRESSION.OS..1..0. + FV.OV.OD + FV.OV.OS + MV.OV.OD + MV.OV.OS+ FV.OV.OS + R.Medial.Rectus.Muscle.Volume + Left.Medial.Rectus.Muscle.Volume, data= TEDV_visible_cols[TEDV_visible_cols$control == 0,]) 
+summary(model_Strabismus_logistf)
+```
+
+
+
+Muscle vs Orbital
+
+```{r}
+#make a new column that is "control" "ON present" "ON absent"
+TEDV$type <- '0'
+TEDV[TEDV$optic_neuropathy== 1,'type'] <- 'ON Present'
+TEDV[TEDV$optic_neuropathy== 0, 'type'] <- 'ON Absent'
+TEDV[TEDV$control== 1,'type'] <- 'Control'
+names(TEDV)
+```
+
+
+Fat vs age
+Fat vs CAS.Score
+Fat vs hertel 
+
+```{r}
+#EXPLORING THE RELATIONSHIP BETWEEN FAT, MUSCLE, and ORBIT 
+par(mfrow=c(3,1))
+ggplot(TEDV, aes(fat_volume, orbit_volume)) + geom_point(aes(color = type))+ ggtitle("Fat Volume vs Orbit Volume") +xlab("Fat Volume")+ ylab("Orbit Volume") + theme_bw()
+#INTERESTING - more muscle less fat
+ggplot(TEDV, aes(fat_volume, muscle_volume)) + geom_point(aes(color = type))+ ggtitle("Fat Volume vs Muscle Volume") +xlab("Fat Volume")+ ylab("Muscle Volume")+ theme_bw()
+
+ggplot(TEDV, aes( muscle_volume, orbit_volume )) + geom_point(aes(color = type))+ ggtitle("Muscle Volume vs Orbit Volume") +xlab("Muscle Volume")+ ylab("Orbit Volume")+ theme_bw()
+
+par(mfrow= c(1,1))
+
+#EXPLORING FAT IN GENERAL 
+par(mfrow=c(3,1))
+# not very interesting most variation at age 60 
+ggplot(TEDV, aes(Age, fat_volume)) + geom_point(aes(color = type))+ ggtitle("Age vs Fat Volume") +xlab("Age")+ ylab("Fat Volume")+ theme_bw()
+#not interesting 
+ggplot(TEDV, aes(fat_volume, CAS.score)) + geom_point(aes(color = type))+ ggtitle("Fat Volume vs CAS Score") +xlab("Fat Volume")+ ylab("CAS Score")+ theme_bw()
+#nothing significant... not measured for control group 
+ggplot(TEDV, aes(fat_volume, hertel)) + geom_point(aes(color = type))+ ggtitle("Fat Volume vs Hertel") +xlab("Fat Volume")+ ylab("Hertel") + theme_bw()
+par(mfrow= c(1,1))
+```
+
+# Correlation Matrix (Niamh)
+```{r, eval = F}
+##Remove controls and irrelevant columns
+TEDV_exp<-subset(TEDV, TEDV$control==0)
+names(TEDV_exp)
+TEDV_exp$Time.of.Image...Date.of.visit<-NULL
+TEDV_exp$baseline.visit.date<-NULL
+TEDV_exp$time.from.onset<-NULL
+TEDV_exp$control<-NULL
+TEDV_exp$OD_or_OS<-NULL
+#convert to factors
+TEDV_exp$CAS.score<-as.numeric(TEDV_exp$CAS.score)
+TEDV_exp$Strabismus.0.No.1.yes<-factor(TEDV_exp$Strabismus.0.No.1.yes)
+TEDV_exp$optic_neuropathy<-factor(TEDV_exp$optic_neuropathy)
+TEDV_exp$medial_bow<-factor(TEDV_exp$medial_bow)
+TEDV_exp$decompression<-factor(TEDV_exp$decompression)
+
+## Correlation matrix
+library(vcd)
+p_mat<-matrix(nrow=ncol(TEDV_exp), ncol=ncol(TEDV_exp))
+cor_mat<-matrix(nrow=ncol(TEDV_exp), ncol=ncol(TEDV_exp))
+
+for (i in 1:ncol(TEDV_exp)){
+  for (j in 1:ncol(TEDV_exp)){
+    x<-TEDV_exp[[i]]
+    y<-TEDV_exp[[j]]
+    if (class(x)=="numeric" & class(y)=="numeric"){
+      c<-cor.test(x, y)
+      cor_mat[i,j]<-c$estimate
+      p_mat[i,j]<-c$p.value
+    }
+    if ((class(x)=="factor" & class(y)=="factor")){
+      tab<-xtabs(~ x+y)
+      res<-assocstats(tab)
+      cor_mat[i,j]<-res$phi
+      p_mat[i,j]<-res$chisq_tests[6]
+    }
+    if ((class(x)=="factor" & class(y)=="numeric")|(class(x)=="numeric" & class(y)=="factor")){
+      x<-as.numeric(x)
+      y<-as.numeric(y)
+      c<-cor.test(x,y)
+      c<-cor.test(x, y)
+      cor_mat[i,j]<-c$estimate
+      p_mat[i,j]<-c$p.value
+    }
+  }
+}
+
+length(cor_mat)
+## format for corrplot
+nams<-c("Age", "CAS", "OSDI", "Strab", "ON", "lago", "hertel", "bowing", "decom", "FV", "MV", "OV", "FVOV", "MVOV", "MRMV")
+
+colnames(cor_mat)<-nams
+rownames(cor_mat)<-nams
+
+colnames(p_mat)<-nams
+rownames(p_mat)<-nams
+
+options(digits = 2)
+cor_mat
+p_mat
+
+##plot
+library(corrplot)
+corrplot(cor_mat, type="upper", order="hclust", tl.col = "black", p.mat = p_mat, sig.level = 0.05, insig = "label_sig")
+```
+
+
+# Wilcoxon tests (Mrinalini)
+```{r}
+library(dplyr)
+#Data 
+TEDV %>% filter( control== 0) -> tedv_exp
+# MV/FV
+tedv_exp$MV.FV<- tedv_exp$muscle_volume/ tedv_exp$fat_volume
+
+#ON 
+wilcox.test( tedv_exp$lagophthalmos ~tedv_exp$optic_neuropathy)
+wilcox.test( tedv_exp$hertel ~tedv_exp$optic_neuropathy)
+wilcox.test( tedv_exp$F ~tedv_exp$optic_neuropathy)
+wilcox.test( tedv_exp$muscle_volume ~tedv_exp$optic_neuropathy)
+wilcox.test( tedv_exp$orbit_volume ~tedv_exp$optic_neuropathy)
+wilcox.test( tedv_exp$lagophthalmos ~tedv_exp$optic_neuropathy)
+wilcox.test( tedv_exp$MV.FV ~tedv_exp$optic_neuropathy)
+wilcox.test( tedv_exp$medial_rectus_muscle_vol ~tedv_exp$optic_neuropathy)
+
+
+tedv_exp %>%  filter(optic_neuropathy==1) %>% summarise(mean(lagophthalmos, na.rm= T), mean(hertel, na.rm= T), mean(FV.OV, na.rm= T), mean(MV.OV, na.rm= T), mean(orbit_volume, na.rm= T), mean(MV.FV,na.rm= T), mean(medial_rectus_muscle_vol, na.rm= T))
+
+
+tedv_exp %>%  filter(optic_neuropathy==0) %>% summarise(mean(lagophthalmos, na.rm= T), mean(hertel, na.rm= T), mean(FV.OV, na.rm= T), mean(MV.OV, na.rm= T), mean(orbit_volume, na.rm= T), mean(MV.FV,na.rm= T), mean(medial_rectus_muscle_vol, na.rm= T))
+
+#Strabismus 
+wilcox.test( tedv_exp$lagophthalmos ~tedv_exp$Strabismus.0.No.1.yes)
+wilcox.test( tedv_exp$hertel ~tedv_exp$Strabismus.0.No.1.yes)
+wilcox.test( tedv_exp$fat_volume ~tedv_exp$Strabismus.0.No.1.yes)
+wilcox.test( tedv_exp$muscle_volume ~tedv_exp$Strabismus.0.No.1.yes)
+wilcox.test( tedv_exp$orbit_volume ~tedv_exp$Strabismus.0.No.1.yes)
+wilcox.test( tedv_exp$MV.FV ~tedv_exp$Strabismus.0.No.1.yes)# Significant 
+
+tedv_exp %>%  filter(Strabismus.0.No.1.yes==1) %>% summarise(mean(lagophthalmos, na.rm= T), mean(hertel, na.rm= T), mean(FV.OV, na.rm= T), mean(MV.OV, na.rm= T), mean(orbit_volume, na.rm= T), mean(MV.FV,na.rm= T), mean(medial_rectus_muscle_vol, na.rm= T))
+
+
+tedv_exp %>%  filter(Strabismus.0.No.1.yes==0) %>% summarise(mean(lagophthalmos, na.rm= T), mean(hertel, na.rm= T), mean(FV.OV, na.rm= T), mean(MV.OV, na.rm= T), mean(orbit_volume, na.rm= T), mean(MV.FV,na.rm= T), mean(medial_rectus_muscle_vol, na.rm= T))
+
+#Decompression
+wilcox.test( tedv_exp$lagophthalmos ~tedv_exp$decompression)
+wilcox.test( tedv_exp$hertel ~tedv_exp$decompression)
+wilcox.test( tedv_exp$FV.OV ~tedv_exp$decompression)
+wilcox.test( tedv_exp$muscle_volume ~tedv_exp$decompression)
+wilcox.test( tedv_exp$orbit_volume ~tedv_exp$decompression)
+
+wilcox.test( tedv_exp$MV.FV~tedv_exp$decompression)#  
+
+#Decompression correlated to lagopthalmos, hertel, fat_volume, orbit_volume and not MV
+
+
+tedv_exp %>%  filter(decompression==1) %>% summarise(mean(lagophthalmos, na.rm= T), mean(hertel, na.rm= T), mean(FV.OV, na.rm= T), mean(MV.OV, na.rm= T), mean(orbit_volume, na.rm= T), mean(MV.FV,na.rm= T), mean(medial_rectus_muscle_vol, na.rm= T))
+
+
+tedv_exp %>%  filter(decompression==0) %>% summarise(mean(lagophthalmos, na.rm= T), mean(hertel, na.rm= T), mean(FV.OV, na.rm= T), mean(MV.OV, na.rm= T), mean(orbit_volume, na.rm= T), mean(MV.FV,na.rm= T), mean(medial_rectus_muscle_vol, na.rm= T), n())
+```
+
